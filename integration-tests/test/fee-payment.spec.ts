@@ -4,7 +4,6 @@ chai.use(chaiAsPromised)
 
 /* Imports: External */
 import { ethers, BigNumber, Contract, utils } from 'ethers'
-import { TxGasLimit, TxGasPrice } from '@eth-optimism/core-utils'
 import { predeploys, getContractInterface } from '@eth-optimism/contracts'
 
 /* Imports: Internal */
@@ -14,6 +13,8 @@ import { Direction } from './shared/watcher-utils'
 
 describe('Fee Payment Integration Tests', async () => {
   let env: OptimismEnv
+  const other = '0x1234123412341234123412341234123412341234'
+
   before(async () => {
     env = await OptimismEnv.new()
   })
@@ -24,6 +25,49 @@ describe('Fee Payment Integration Tests', async () => {
       predeploys.OVM_SequencerFeeVault,
       getContractInterface('OVM_SequencerFeeVault'),
       env.l2Wallet
+    )
+  })
+
+  it(`should return eth_gasPrice equal to OVM_GasPriceOracle.gasPrice`, async () => {
+    const assertGasPrice = async () => {
+      const gasPrice = await env.l2Wallet.getGasPrice()
+      const oracleGasPrice = await env.gasPriceOracle.gasPrice()
+      expect(gasPrice).to.deep.equal(oracleGasPrice)
+    }
+
+    assertGasPrice()
+    // update the gas price
+    const tx = await env.gasPriceOracle.setGasPrice(1000)
+    await tx.wait()
+
+    assertGasPrice()
+  })
+
+  it('Paying a nonzero but acceptable gasPrice fee', async () => {
+    const amount = utils.parseEther('0.0000001')
+    const balanceBefore = await env.l2Wallet.getBalance()
+    const feeVaultBalanceBefore = await env.l2Wallet.provider.getBalance(
+      ovmSequencerFeeVault.address
+    )
+    expect(balanceBefore.gt(amount))
+
+    const tx = await env.ovmEth.transfer(other, amount)
+    const receipt = await tx.wait()
+    expect(receipt.status).to.eq(1)
+
+    const balanceAfter = await env.l2Wallet.getBalance()
+    const feeVaultBalanceAfter = await env.l2Wallet.provider.getBalance(
+      ovmSequencerFeeVault.address
+    )
+
+    const expectedFeePaid = tx.gasPrice.mul(tx.gasLimit)
+    expect(balanceBefore.sub(balanceAfter)).to.deep.equal(
+      expectedFeePaid.add(amount)
+    )
+
+    // Make sure the fee was transferred to the vault.
+    expect(feeVaultBalanceAfter.sub(feeVaultBalanceBefore)).to.deep.equal(
+      expectedFeePaid
     )
   })
 

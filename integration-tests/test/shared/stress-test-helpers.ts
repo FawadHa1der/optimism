@@ -11,15 +11,43 @@ interface TransactionParams {
   functionParams: any[]
 }
 
+// TxRequest holds a wallet and tx
+// params that the wallet will send
+interface TxRequest {
+  tx: TransactionParams
+  wallet: ethers.Wallet
+}
+
 // Arbitrary big amount of gas for the L1<>L2 messages.
 const MESSAGE_GAS = 8_000_000
 
+export const createWallets = (count: number): Array<ethers.Wallet> => {
+  const wallets = []
+  for (let i = 0; i < count; i++) {
+    const wallet = ethers.Wallet.createRandom()
+    wallets.push(wallet)
+  }
+  return wallets
+}
+
+const pairSigners = (
+  wallets: ethers.Wallet[],
+  tx: TransactionParams
+): TxRequest[] => {
+  const pairs: Array<TxRequest> = []
+  for (const wallet of wallets) {
+    pairs.push({ wallet, tx })
+  }
+  return pairs
+}
+
 export const executeL1ToL2Transactions = async (
   env: OptimismEnv,
-  txs: TransactionParams[]
+  requests: TxRequest[]
 ) => {
-  for (const tx of txs) {
-    const signer = ethers.Wallet.createRandom().connect(env.l1Wallet.provider)
+  for (const request of requests) {
+    const signer = request.wallet.connect(env.l1Wallet.provider)
+    const tx = request.tx
     const receipt = await env.l1Messenger
       .connect(signer)
       .sendMessage(
@@ -40,10 +68,11 @@ export const executeL1ToL2Transactions = async (
 
 export const executeL2ToL1Transactions = async (
   env: OptimismEnv,
-  txs: TransactionParams[]
+  requests: TxRequest[]
 ) => {
-  for (const tx of txs) {
-    const signer = ethers.Wallet.createRandom().connect(env.l2Wallet.provider)
+  for (const request of requests) {
+    const signer = request.wallet.connect(env.l2Wallet.provider)
+    const tx = request.tx
     const receipt = await env.l2Messenger
       .connect(signer)
       .sendMessage(
@@ -65,10 +94,11 @@ export const executeL2ToL1Transactions = async (
 
 export const executeL2Transactions = async (
   env: OptimismEnv,
-  txs: TransactionParams[]
+  requests: TxRequest[]
 ) => {
-  for (const tx of txs) {
-    const signer = ethers.Wallet.createRandom().connect(env.l2Wallet.provider)
+  for (const request of requests) {
+    const tx = request.tx
+    const signer = request.wallet.connect(env.l2Wallet.provider)
     const result = await tx.contract
       .connect(signer)
       .functions[tx.functionName](...tx.functionParams, {
@@ -81,43 +111,38 @@ export const executeL2Transactions = async (
 export const executeRepeatedL1ToL2Transactions = async (
   env: OptimismEnv,
   tx: TransactionParams,
-  count: number
+  wallets: ethers.Wallet[]
 ) => {
-  await executeL1ToL2Transactions(
-    env,
-    [...Array(count).keys()].map(() => tx)
-  )
+  const pairs: TxRequest[] = pairSigners(wallets, tx)
+  await executeL1ToL2Transactions(env, pairs)
 }
 
 export const executeRepeatedL2ToL1Transactions = async (
   env: OptimismEnv,
   tx: TransactionParams,
-  count: number
+  wallets: ethers.Wallet[]
 ) => {
-  await executeL2ToL1Transactions(
-    env,
-    [...Array(count).keys()].map(() => tx)
-  )
+  const pairs: TxRequest[] = pairSigners(wallets, tx)
+  await executeL2ToL1Transactions(env, pairs)
 }
 
 export const executeRepeatedL2Transactions = async (
   env: OptimismEnv,
   tx: TransactionParams,
-  count: number
+  wallets: ethers.Wallet[]
 ) => {
-  await executeL2Transactions(
-    env,
-    [...Array(count).keys()].map(() => tx)
-  )
+  const pairs: TxRequest[] = pairSigners(wallets, tx)
+  await executeL2Transactions(env, pairs)
 }
 
 export const executeL1ToL2TransactionsParallel = async (
   env: OptimismEnv,
-  txs: TransactionParams[]
+  requests: TxRequest[]
 ) => {
   await Promise.all(
-    txs.map(async (tx) => {
-      const signer = ethers.Wallet.createRandom().connect(env.l1Wallet.provider)
+    requests.map(async (request) => {
+      const signer = request.wallet.connect(env.l1Wallet.provider)
+      const tx = request.tx
       const receipt = await env.l1Messenger
         .connect(signer)
         .sendMessage(
@@ -139,11 +164,12 @@ export const executeL1ToL2TransactionsParallel = async (
 
 export const executeL2ToL1TransactionsParallel = async (
   env: OptimismEnv,
-  txs: TransactionParams[]
+  requests: TxRequest[]
 ) => {
   await Promise.all(
-    txs.map(async (tx) => {
-      const signer = ethers.Wallet.createRandom().connect(env.l2Wallet.provider)
+    requests.map(async (request) => {
+      const tx = request.tx
+      const signer = request.wallet.connect(env.l2Wallet.provider)
       const receipt = await env.l2Messenger
         .connect(signer)
         .sendMessage(
@@ -166,11 +192,12 @@ export const executeL2ToL1TransactionsParallel = async (
 
 export const executeL2TransactionsParallel = async (
   env: OptimismEnv,
-  txs: TransactionParams[]
+  requests: TxRequest[]
 ) => {
   await Promise.all(
-    txs.map(async (tx) => {
-      const signer = ethers.Wallet.createRandom().connect(env.l2Wallet.provider)
+    requests.map(async (request) => {
+      const tx = request.tx
+      const signer = request.wallet.connect(env.l2Wallet.provider)
       const result = await tx.contract
         .connect(signer)
         .functions[tx.functionName](...tx.functionParams, {
@@ -184,32 +211,26 @@ export const executeL2TransactionsParallel = async (
 export const executeRepeatedL1ToL2TransactionsParallel = async (
   env: OptimismEnv,
   tx: TransactionParams,
-  count: number
+  wallets: ethers.Wallet[]
 ) => {
-  await executeL1ToL2TransactionsParallel(
-    env,
-    [...Array(count).keys()].map(() => tx)
-  )
+  const pairs: TxRequest[] = pairSigners(wallets, tx)
+  await executeL1ToL2TransactionsParallel(env, pairs)
 }
 
 export const executeRepeatedL2ToL1TransactionsParallel = async (
   env: OptimismEnv,
   tx: TransactionParams,
-  count: number
+  wallets: ethers.Wallet[]
 ) => {
-  await executeL2ToL1TransactionsParallel(
-    env,
-    [...Array(count).keys()].map(() => tx)
-  )
+  const pairs: TxRequest[] = pairSigners(wallets, tx)
+  await executeL2ToL1TransactionsParallel(env, pairs)
 }
 
 export const executeRepeatedL2TransactionsParallel = async (
   env: OptimismEnv,
   tx: TransactionParams,
-  count: number
+  wallets: ethers.Wallet[]
 ) => {
-  await executeL2TransactionsParallel(
-    env,
-    [...Array(count).keys()].map(() => tx)
-  )
+  const pairs: TxRequest[] = pairSigners(wallets, tx)
+  await executeL2TransactionsParallel(env, pairs)
 }

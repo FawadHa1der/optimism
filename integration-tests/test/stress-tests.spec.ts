@@ -1,10 +1,11 @@
 import { expect } from 'chai'
 
 /* Imports: External */
-import { Contract, ContractFactory } from 'ethers'
+import { Contract, ContractFactory, Wallet, utils } from 'ethers'
 
 /* Imports: Internal */
 import { OptimismEnv } from './shared/env'
+import { fundUser } from './shared/utils'
 import {
   executeRepeatedL1ToL2Transactions,
   executeRepeatedL2ToL1Transactions,
@@ -12,6 +13,7 @@ import {
   executeRepeatedL1ToL2TransactionsParallel,
   executeRepeatedL2ToL1TransactionsParallel,
   executeRepeatedL2TransactionsParallel,
+  createWallets
 } from './shared/stress-test-helpers'
 
 /* Imports: Artifacts */
@@ -24,6 +26,9 @@ const STRESS_TEST_TIMEOUT = 300_000
 
 describe('stress tests', () => {
   let env: OptimismEnv
+  const walletCount = 5
+  let wallets: Array<Wallet> = []
+
   before(async () => {
     env = await OptimismEnv.new()
   })
@@ -45,12 +50,15 @@ describe('stress tests', () => {
     await L1SimpleStorage.deployTransaction.wait()
     L2SimpleStorage = await factory__L2SimpleStorage.deploy()
     await L2SimpleStorage.deployTransaction.wait()
+
+    wallets = createWallets(walletCount)
+    for (const wallet of wallets) {
+      await fundUser(env.watcher, env.l1Bridge, utils.parseEther('3'))
+    }
   })
 
   describe('L1 => L2 stress tests', () => {
-    const numTransactions = 10
-
-    it(`${numTransactions} L1 => L2 transactions (serial)`, async () => {
+    it(`${walletCount} L1 => L2 transactions (serial)`, async () => {
       await executeRepeatedL1ToL2Transactions(
         env,
         {
@@ -58,15 +66,15 @@ describe('stress tests', () => {
           functionName: 'setValue',
           functionParams: [`0x${'42'.repeat(32)}`],
         },
-        numTransactions
+        wallets
       )
 
       expect((await L2SimpleStorage.totalCount()).toNumber()).to.equal(
-        numTransactions
+        wallets.length
       )
     }).timeout(STRESS_TEST_TIMEOUT)
 
-    it(`${numTransactions} L1 => L2 transactions (parallel)`, async () => {
+    it(`${walletCount} L1 => L2 transactions (parallel)`, async () => {
       await executeRepeatedL1ToL2TransactionsParallel(
         env,
         {
@@ -74,19 +82,17 @@ describe('stress tests', () => {
           functionName: 'setValue',
           functionParams: [`0x${'42'.repeat(32)}`],
         },
-        numTransactions
+        wallets
       )
 
       expect((await L2SimpleStorage.totalCount()).toNumber()).to.equal(
-        numTransactions
+        wallets.length
       )
     }).timeout(STRESS_TEST_TIMEOUT)
   })
 
   describe('L2 => L1 stress tests', () => {
-    const numTransactions = 10
-
-    it(`${numTransactions} L2 => L1 transactions (serial)`, async () => {
+    it(`${walletCount} L2 => L1 transactions (serial)`, async () => {
       await executeRepeatedL2ToL1Transactions(
         env,
         {
@@ -94,15 +100,15 @@ describe('stress tests', () => {
           functionName: 'setValue',
           functionParams: [`0x${'42'.repeat(32)}`],
         },
-        numTransactions
+        wallets
       )
 
       expect((await L1SimpleStorage.totalCount()).toNumber()).to.equal(
-        numTransactions
+        wallets.length
       )
     }).timeout(STRESS_TEST_TIMEOUT)
 
-    it(`${numTransactions} L2 => L1 transactions (parallel)`, async () => {
+    it(`${walletCount} L2 => L1 transactions (parallel)`, async () => {
       await executeRepeatedL2ToL1TransactionsParallel(
         env,
         {
@@ -110,19 +116,17 @@ describe('stress tests', () => {
           functionName: 'setValue',
           functionParams: [`0x${'42'.repeat(32)}`],
         },
-        numTransactions
+        wallets
       )
 
       expect((await L1SimpleStorage.totalCount()).toNumber()).to.equal(
-        numTransactions
+        wallets.length
       )
     }).timeout(STRESS_TEST_TIMEOUT)
   })
 
   describe('L2 transaction stress tests', () => {
-    const numTransactions = 10
-
-    it(`${numTransactions} L2 transactions (serial)`, async () => {
+    it(`${walletCount} L2 transactions (serial)`, async () => {
       await executeRepeatedL2Transactions(
         env,
         {
@@ -130,15 +134,15 @@ describe('stress tests', () => {
           functionName: 'setValueNotXDomain',
           functionParams: [`0x${'42'.repeat(32)}`],
         },
-        numTransactions
+        wallets
       )
 
       expect((await L2SimpleStorage.totalCount()).toNumber()).to.equal(
-        numTransactions
+        wallets.length
       )
     }).timeout(STRESS_TEST_TIMEOUT)
 
-    it(`${numTransactions} L2 transactions (parallel)`, async () => {
+    it(`${walletCount} L2 transactions (parallel)`, async () => {
       await executeRepeatedL2TransactionsParallel(
         env,
         {
@@ -146,16 +150,18 @@ describe('stress tests', () => {
           functionName: 'setValueNotXDomain',
           functionParams: [`0x${'42'.repeat(32)}`],
         },
-        numTransactions
+        wallets
       )
 
       expect((await L2SimpleStorage.totalCount()).toNumber()).to.equal(
-        numTransactions
+        wallets.length
       )
     }).timeout(STRESS_TEST_TIMEOUT)
   })
 
   // SKIP: needs message passing PR
+  // This needs to be updated to generate a set of wallets for each
+  // so they can truly send transactions in parallel
   describe.skip('C-C-C-Combo breakers', () => {
     const numTransactions = 10
 
@@ -168,7 +174,7 @@ describe('stress tests', () => {
             functionName: 'setValue',
             functionParams: [`0x${'42'.repeat(32)}`],
           },
-          numTransactions
+          wallets
         ),
         executeRepeatedL2ToL1Transactions(
           env,
@@ -177,7 +183,7 @@ describe('stress tests', () => {
             functionName: 'setValue',
             functionParams: [`0x${'42'.repeat(32)}`],
           },
-          numTransactions
+          wallets
         ),
         executeRepeatedL2Transactions(
           env,
@@ -186,7 +192,7 @@ describe('stress tests', () => {
             functionName: 'setValueNotXDomain',
             functionParams: [`0x${'42'.repeat(32)}`],
           },
-          numTransactions
+          wallets
         ),
       ])
 
@@ -208,7 +214,7 @@ describe('stress tests', () => {
             functionName: 'setValue',
             functionParams: [`0x${'42'.repeat(32)}`],
           },
-          numTransactions
+          wallets
         ),
         executeRepeatedL2ToL1TransactionsParallel(
           env,
@@ -217,7 +223,7 @@ describe('stress tests', () => {
             functionName: 'setValue',
             functionParams: [`0x${'42'.repeat(32)}`],
           },
-          numTransactions
+          wallets
         ),
         executeRepeatedL2TransactionsParallel(
           env,
@@ -226,7 +232,7 @@ describe('stress tests', () => {
             functionName: 'setValueNotXDomain',
             functionParams: [`0x${'42'.repeat(32)}`],
           },
-          numTransactions
+          wallets
         ),
       ])
 
